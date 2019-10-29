@@ -16,9 +16,13 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import com.jjoe64.graphview.GraphView;
 import com.jjoe64.graphview.series.DataPoint;
 import com.jjoe64.graphview.series.LineGraphSeries;
+
+
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -28,6 +32,9 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.lang.reflect.Type;
+import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Date;
 
 public class DataView extends AppCompatActivity {
@@ -54,11 +61,21 @@ public class DataView extends AppCompatActivity {
     private BTConnection btConnection;
     private Handler mHandler; // Our main handler that will receive callback notifications
 
-    private Boolean recording;
+    private Boolean recording, saveRecording;
     private int timeStartRecord, finishRecording;
     private int recordedData;
 
     private Button btnMenu, btnBT, btnDataDir;
+
+    private DataPoint[] dataListAx, dataListAy, dataListAz;
+    private DataPoint[] dataListGx, dataListGy, dataListGz;
+
+    private static int RECORD_DATA_BUF = 15000;
+
+    private int curTime;
+
+    private String fN;
+    private int fileIndex;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -66,6 +83,7 @@ public class DataView extends AppCompatActivity {
         setContentView(R.layout.activity_data_view);
 
         recording = false;
+        saveRecording = false;
 
         txtAx = (TextView) findViewById(R.id.txtAx);
         txtAy = (TextView) findViewById(R.id.txtAy);
@@ -90,14 +108,22 @@ public class DataView extends AppCompatActivity {
         btnMenu = (Button) findViewById(R.id.btnMenu);
         btnBT = (Button) findViewById(R.id.btnBT);
         btnDataDir = (Button) findViewById(R.id.btnDataDir);
+
         initialize_buttons();
+        curTime = 0;
+        recordedData = 0;
+
+        fN = "";
+        fileIndex = 0;
 
         record.setOnClickListener((new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+
                 if(!recording) {
-                    timeStartRecord = dataBuffer.most_recent().time;
+                    timeStartRecord = curTime;
                     recording = true;
+                    saveRecording = false;
                     recordedData = 0;
 
                     String tEdt = recordLength.getText().toString();
@@ -117,6 +143,9 @@ public class DataView extends AppCompatActivity {
                     finishRecording = timeStartRecord + tEdit;
                     dataBuffer.reset();
                     lastStored.reset();
+
+                    graphAcc.removeAllSeries();
+                    graphGyro.removeAllSeries();
                 } else {
                     Toast toast = Toast.makeText(getBaseContext(), "Still Recording", Toast.LENGTH_LONG);
                     toast.show();
@@ -133,175 +162,7 @@ public class DataView extends AppCompatActivity {
 
             // https://github.com/google/gson/blob/master/UserGuide.md#TOC-Object-Examples
             public void handleMessage(android.os.Message msg){
-                String t = "";
-                int dataIndex = 0;
-
-                String[] time = new String[25];
-
-                String[] accDx = new String[25];
-                String[] accDy = new String[25];
-                String[] accDz = new String[25];
-
-                String[] gyrDx = new String[25];
-                String[] gyrDy = new String[25];
-                String[] gyrDz = new String[25];
-
-                String[] accData = new String[3];
-                String[] gyrData = new String[3];
-
-                if(msg.what == BTConnection.MESSAGE_READ){
-                    String readMessage = null;
-                    try {
-                        readMessage = new String((byte[]) msg.obj, "UTF-8");
-
-                        try {
-                            JSONObject data = new JSONObject(readMessage);
-                            JSONArray dataFields = data.getJSONArray("data");
-                            for (int i = 0; i < dataFields.length() - 1; i++) {
-                                if (dataFields.get(i) != null) {
-                                    JSONObject data2 = dataFields.getJSONObject(i);
-                                    Log.d("asshole", data2.toString());
-                                    t = data2.get("time").toString();
-                                    JSONObject accelJSON = (data2.getJSONObject("acceleration"));
-                                    JSONObject gryoJSON = (data2.getJSONObject("gyroscope"));
-
-                                    time[dataIndex] = t;
-                                    String ax = accelJSON.get("x").toString();
-                                    String ay = accelJSON.get("y").toString();
-                                    String az = accelJSON.get("z").toString();
-
-                                    String gx = gryoJSON.get("x").toString();
-                                    String gy = gryoJSON.get("y").toString();
-                                    String gz = gryoJSON.get("z").toString();
-
-                                    DataPointBT d = new DataPointBT(Integer.valueOf(t), Double.valueOf(ax),
-                                            Double.valueOf(ay), Double.valueOf(az),
-                                            Double.valueOf(gx), Double.valueOf(gy),
-                                            Double.valueOf(gz));
-                                    dataBuffer.put(d);
-
-                                    txtTime.setText(t);
-
-                                    txtAx.setText(ax);
-                                    txtAy.setText(ay);
-                                    txtAz.setText(az);
-
-                                    txtGx.setText(gx);
-                                    txtGy.setText(gy);
-                                    txtGz.setText(gz);
-                                }
-
-                            }
-
-
-
-                        } catch (JSONException e) {
-                            e.printStackTrace();
-                        }
-
-                    } catch (UnsupportedEncodingException e) {
-                        e.printStackTrace();
-                    }
-                    if(recording) {
-                        txtDebug.setText("recent time: " +  String.valueOf(dataBuffer.most_recent().time) +
-                                        "finish recording time: " + String.valueOf(finishRecording));
-                        if(dataBuffer.most_recent().time > finishRecording) {
-
-                            int iDP = 0;
-                            DataPoint[] dataListAx = new DataPoint[recordedData + 1000];
-                            DataPoint[] dataListAy = new DataPoint[recordedData + 1000];
-                            DataPoint[] dataListAz = new DataPoint[recordedData + 1000];
-
-                            DataPoint[] dataListGx = new DataPoint[recordedData + 1000];
-                            DataPoint[] dataListGy = new DataPoint[recordedData + 1000];
-                            DataPoint[] dataListGz = new DataPoint[recordedData + 1000];
-
-                            DataPointBT d = dataBuffer.take();
-                            int intTime = d.time;
-                            while(d != null) {
-                                int t2 = d.time-intTime;
-                                lastStored.put(d);
-                                Log.d("Cazzo!!!!", String.valueOf(iDP));
-                                dataListAx[iDP] = new DataPoint(t2, d.ax);
-                                dataListAy[iDP] = new DataPoint(t2, d.ay);
-                                dataListAz[iDP] = new DataPoint(t2, d.az);
-                                dataListGx[iDP] = new DataPoint(t2, d.gx);
-                                dataListGy[iDP] = new DataPoint(t2, d.gy);
-                                dataListGz[iDP] = new DataPoint(t2, d.gz);
-
-
-                                d = dataBuffer.take();
-                                iDP++;
-                            }
-                            recording = false;
-
-                            if(save()) {
-                                Toast toast = Toast.makeText(getBaseContext(), "Recording Finished, Save Successful", Toast.LENGTH_LONG);
-                                toast.show();
-                            } else {
-                                Toast toast = Toast.makeText(getBaseContext(), "Recording Finished, Save Failed!!", Toast.LENGTH_LONG);
-                                toast.show();
-                            }
-
-                            lastStored.reset();
-
-                            LineGraphSeries<DataPoint> seriesX = new LineGraphSeries<DataPoint>(dataListAx);
-                            LineGraphSeries<DataPoint> seriesY = new LineGraphSeries<DataPoint>(dataListAy);
-                            LineGraphSeries<DataPoint> seriesZ = new LineGraphSeries<DataPoint>(dataListAz);
-                            seriesX.setTitle("aX");
-                            seriesY.setTitle("aY");
-                            seriesZ.setTitle("aZ");
-                            seriesX.setColor(Color.GREEN);
-                            seriesY.setColor(Color.RED);
-                            seriesZ.setColor(Color.BLUE);
-
-                            // activate horizontal zooming and scrolling
-                            graphAcc.getViewport().setScalable(true);
-                            // activate vertical scrolling
-                            graphAcc.getViewport().setScrollableY(true);
-                            // set manual X bounds
-                            graphAcc.getViewport().setXAxisBoundsManual(true);
-                            graphAcc.getViewport().setMinX(dataListAx[0].getX());
-                            graphAcc.getViewport().setMaxX(dataListAx[iDP-1].getX());
-                            graphAcc.addSeries(seriesX);
-                            graphAcc.addSeries(seriesY);
-                            graphAcc.addSeries(seriesZ);
-                            // Display the legend.
-                            graphAcc.getLegendRenderer().setVisible(true);
-
-                            LineGraphSeries<DataPoint> seriesGx = new LineGraphSeries<DataPoint>(dataListGx);
-                            LineGraphSeries<DataPoint> seriesGy = new LineGraphSeries<DataPoint>(dataListGy);
-                            LineGraphSeries<DataPoint> seriesGz = new LineGraphSeries<DataPoint>(dataListGz);
-
-                            seriesGx.setTitle("gX");
-                            seriesGy.setTitle("gY");
-                            seriesGz.setTitle("gZ");
-                            seriesGx.setColor(Color.GREEN);
-                            seriesGy.setColor(Color.RED);
-                            seriesGz.setColor(Color.BLUE);
-
-                            // set manual X bounds
-                            graphGyro.getViewport().setXAxisBoundsManual(true);
-                            graphGyro.getViewport().setMinX(dataListGx[0].getX());
-                            graphGyro.getViewport().setMaxX(dataListGx[iDP-1].getX());
-                            // activate vertical scrolling
-                            graphGyro.getViewport().setScrollableY(true);
-                            // activate horizontal zooming and scrolling
-                            graphGyro.getViewport().setScalable(true);
-                            graphGyro.addSeries(seriesGx);
-                            graphGyro.addSeries(seriesGy);
-                            graphGyro.addSeries(seriesGz);
-                            graphGyro.getLegendRenderer().setVisible(true);
-                        }
-                    }
-                }
-
-                if(msg.what == BTConnection.CONNECTING_STATUS){
-                    if(msg.arg1 == 1)
-                        txtStatus.setText("Connected to Device: " + (String)(msg.obj));
-                    else
-                        txtStatus.setText("Connection Failed");
-                }
+                handle_message(msg);
             }
         };
 
@@ -309,6 +170,201 @@ public class DataView extends AppCompatActivity {
         btConnection.setHandler(mHandler);
 
     }
+
+    private void handle_message(android.os.Message msg) {
+        //Read message
+
+        curTime = read_incoming_data(msg);
+
+        if(recording) {
+            if(curTime > finishRecording) {
+                saveRecording = true;
+                recording = false;
+            }
+        }
+
+        if(saveRecording) {
+            // save data
+            int maxDataPoints = save_data();
+            // create graph
+            create_graphs(maxDataPoints);
+            lastStored.reset();
+        }
+    }
+
+    private int read_incoming_data(android.os.Message msg) {
+        String t = "";
+
+        String ax ="";
+        String ay = "";
+        String az = "";
+
+        String gx = "";
+        String gy = "";
+        String gz = "";
+
+        if(msg.what == BTConnection.MESSAGE_READ) {
+            String readMessage = null;
+            try {
+                readMessage = new String((byte[]) msg.obj, "UTF-8");
+
+//                Gson gson = new Gson();
+//
+//                Type dataListType = new TypeToken<ArrayList<DataPointJSON>>(){}.getType();
+//
+//                ArrayList<DataPointJSON> dataPoints = gson.fromJson(readMessage, dataListType);
+//
+//                for(DataPointJSON dataP : dataPoints){
+//                    Log.d("Trying gson", dataP.toString());
+//                }
+
+                try {
+                    JSONObject data = new JSONObject(readMessage);
+                    JSONArray dataFields = data.getJSONArray("data");
+
+                    for (int i = 0; i < dataFields.length() - 1; i++) {
+                        if (dataFields.get(i) != null) {
+                            JSONObject data2 = dataFields.getJSONObject(i);
+                            t = data2.get("time").toString();
+                            JSONObject accelJSON = (data2.getJSONObject("acceleration"));
+                            JSONObject gryoJSON = (data2.getJSONObject("gyroscope"));
+
+                            ax = accelJSON.get("x").toString();
+                            ay = accelJSON.get("y").toString();
+                            az = accelJSON.get("z").toString();
+
+                            gx = gryoJSON.get("x").toString();
+                            gy = gryoJSON.get("y").toString();
+                            gz = gryoJSON.get("z").toString();
+
+                            if(recording) {
+                                recordedData++;
+                                txtDebug.setText("recent time: " + t + "finish recording time: " + String.valueOf(finishRecording));
+                                DataPointBT d = new DataPointBT(Integer.valueOf(t), Double.valueOf(ax),
+                                        Double.valueOf(ay), Double.valueOf(az),
+                                        Double.valueOf(gx), Double.valueOf(gy),
+                                        Double.valueOf(gz));
+                                dataBuffer.put(d);
+                            }
+                        }
+                    }
+                    txtTime.setText(t);
+
+                    txtAx.setText(ax);
+                    txtAy.setText(ay);
+                    txtAz.setText(az);
+
+                    txtGx.setText(gx);
+                    txtGy.setText(gy);
+                    txtGz.setText(gz);
+
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+
+            } catch (UnsupportedEncodingException e) {
+                e.printStackTrace();
+            }
+        }
+
+        if(t != "" && Integer.valueOf(t) > curTime) {
+            return Integer.valueOf(t);
+        } else {
+            return -1;
+        }
+    }
+
+    private int save_data() {
+        int iDP = 0;
+
+        dataListAx = new DataPoint[recordedData];
+        dataListAy = new DataPoint[recordedData];
+        dataListAz = new DataPoint[recordedData];
+
+        dataListGx = new DataPoint[recordedData];
+        dataListGy = new DataPoint[recordedData];
+        dataListGz = new DataPoint[recordedData];
+
+        DataPointBT d = dataBuffer.take();
+        int intTime = d.time;
+        while(d != null) {
+            int t2 = d.time-intTime;
+            lastStored.put(d);
+            dataListAx[iDP] = new DataPoint(t2, d.ax);
+            dataListAy[iDP] = new DataPoint(t2, d.ay);
+            dataListAz[iDP] = new DataPoint(t2, d.az);
+            dataListGx[iDP] = new DataPoint(t2, d.gx);
+            dataListGy[iDP] = new DataPoint(t2, d.gy);
+            dataListGz[iDP] = new DataPoint(t2, d.gz);
+
+            d = dataBuffer.take();
+            iDP++;
+        }
+        recording = false;
+        saveRecording = false;
+
+        if(save()) {
+            Toast toast = Toast.makeText(getBaseContext(), "Recording Finished, Save Successful", Toast.LENGTH_LONG);
+            toast.show();
+        } else {
+            Toast toast = Toast.makeText(getBaseContext(), "Recording Finished, Save Failed!!", Toast.LENGTH_LONG);
+            toast.show();
+        }
+
+        lastStored.reset();
+        return iDP;
+    }
+
+    private void create_graphs(int iDP) {
+
+        LineGraphSeries<DataPoint> seriesX = new LineGraphSeries<DataPoint>(dataListAx);
+        LineGraphSeries<DataPoint> seriesY = new LineGraphSeries<DataPoint>(dataListAy);
+        LineGraphSeries<DataPoint> seriesZ = new LineGraphSeries<DataPoint>(dataListAz);
+        seriesX.setTitle("aX");
+        seriesY.setTitle("aY");
+        seriesZ.setTitle("aZ");
+        seriesX.setColor(Color.GREEN);
+        seriesY.setColor(Color.RED);
+        seriesZ.setColor(Color.BLUE);
+
+        // activate horizontal zooming and scrolling
+        graphAcc.getViewport().setScalable(true);
+        // activate vertical scrolling
+        graphAcc.getViewport().setScrollableY(true);
+        // set manual X bounds
+        graphAcc.getViewport().setXAxisBoundsManual(true);
+        graphAcc.getViewport().setMinX(dataListAx[0].getX());
+        graphAcc.getViewport().setMaxX(dataListAx[iDP-1].getX());
+        graphAcc.addSeries(seriesX);
+        graphAcc.addSeries(seriesY);
+        graphAcc.addSeries(seriesZ);
+        // Display the legend.
+        graphAcc.getLegendRenderer().setVisible(true);
+
+        LineGraphSeries<DataPoint> seriesGx = new LineGraphSeries<DataPoint>(dataListGx);
+        LineGraphSeries<DataPoint> seriesGy = new LineGraphSeries<DataPoint>(dataListGy);
+        LineGraphSeries<DataPoint> seriesGz = new LineGraphSeries<DataPoint>(dataListGz);
+
+        seriesGx.setTitle("gX");
+        seriesGy.setTitle("gY");
+        seriesGz.setTitle("gZ");
+        seriesGx.setColor(Color.GREEN);
+        seriesGy.setColor(Color.RED);
+        seriesGz.setColor(Color.BLUE);
+
+        // set manual X bounds
+        graphGyro.getViewport().setXAxisBoundsManual(true);
+        graphGyro.getViewport().setMinX(dataListGx[0].getX());
+        graphGyro.getViewport().setMaxX(dataListGx[iDP-1].getX());
+        // activate vertical scrolling
+        graphGyro.getViewport().setScrollableY(true);
+        // activate horizontal zooming and scrolling
+        graphGyro.getViewport().setScalable(true);
+        graphGyro.addSeries(seriesGx);
+        graphGyro.addSeries(seriesGy);
+        graphGyro.addSeries(seriesGz);
+        graphGyro.getLegendRenderer().setVisible(true);
+}
 
     private void initialize_buttons() {
 
@@ -347,17 +403,20 @@ public class DataView extends AppCompatActivity {
 
     private boolean save() {
         int counter = 0;
-        String header = "time,ax,ay,az,gx,gy,gz";
+        String header = "time,ax,ay,az,gx,gy,gz\n";
 
-        String fN = "";
         if(fileName.getText().length() > 0) {
-            fN = fileName.getText().toString();
+            String f = fileName.getText().toString();
+            if(fN != f) {
+                fN = f;
+            }
         } else {
             Date currentTime = Calendar.getInstance().getTime();
             fN = "data_" + currentTime.toString();
             fileName.setText(fN);
         }
-        String fileName = fN + ".csv";
+
+        String fileName = fN + "_" + String.valueOf(fileIndex) + ".csv";
         File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
         File file = new File(dir, fileName);
 
@@ -372,6 +431,7 @@ public class DataView extends AppCompatActivity {
                     txtDebug.setText(d.toFile());
                 }
             }
+            fileIndex++;
         } catch (IOException e) {
             e.printStackTrace();
             return false;
@@ -384,7 +444,4 @@ public class DataView extends AppCompatActivity {
         }
     }
 
-    public void makeGraph() {
-
-    }
 }

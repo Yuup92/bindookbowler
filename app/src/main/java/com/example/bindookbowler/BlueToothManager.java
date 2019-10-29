@@ -169,10 +169,10 @@ public class BlueToothManager extends AppCompatActivity {
         }
     }
 
-    @Override
-    public void onStop() {
-        unregisterReceiver(btConnection.blReceiver);
-        super.onStop();
-    }
+//    @Override
+//    public void onStop() {
+//        unregisterReceiver(btConnection.blReceiver);
+//        super.onStop();
+//    }
 
 }

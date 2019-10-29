@@ -165,6 +165,9 @@ public class DataDir extends AppCompatActivity {
 
     private void make_graphs(ArrayList<String[]> data) {
 
+        graphAcc.removeAllSeries();
+        graphGyro.removeAllSeries();
+
         Log.d("STATE", String.valueOf(data.size()));
 
         DataPoint[] dataListAx = new DataPoint[data.size()];

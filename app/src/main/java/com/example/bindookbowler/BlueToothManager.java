@@ -54,7 +54,6 @@ public class BlueToothManager extends AppCompatActivity {
 
         mBTArrayAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1);
 
-
         mDevicesListView = (ListView)findViewById(R.id.devicesListView);
         mDevicesListView.setAdapter(mBTArrayAdapter);
         mDevicesListView.setOnItemClickListener(mDeviceClickListener);
@@ -74,10 +73,15 @@ public class BlueToothManager extends AppCompatActivity {
 
             public void handleMessage(android.os.Message msg){
                 if(msg.what == MESSAGE_READ){
-                    String readMessage = "";
+                    String readMessage = "Trying to read msg";
 
                     try {
                         readMessage = new String((byte[]) msg.obj, "UTF-8");
+                        if(readMessage == "") {
+                            textRc.setText("Bluetooth data is not working");
+                        } else {
+                            textRc.setText(readMessage);
+                        }
                     } catch (UnsupportedEncodingException e) {
                         Log.d("bluetooth", "Not working");
                         e.printStackTrace();
@@ -107,7 +111,7 @@ public class BlueToothManager extends AppCompatActivity {
             buttonDiscoverDevices.setOnClickListener(new View.OnClickListener(){
                 @Override
                 public void onClick(View v){
-                    btConnection.discover(v);
+                    discover(v);
                 }
             });
         }
@@ -122,7 +126,6 @@ public class BlueToothManager extends AppCompatActivity {
             @Override
             public void onClick(View view) {
                 Context context = getApplicationContext();
-
                 Intent mainActivity = new Intent(context, MainActivity.class);
                 startActivity(mainActivity);
             }
@@ -145,5 +148,31 @@ public class BlueToothManager extends AppCompatActivity {
             btConnection.makeConnection(v, context);
         }
     };
+
+    public void discover(View view){
+        // Check if the device is already discovering
+        Context context = view.getContext();
+
+        if(btConnection.mBTAdapter.isDiscovering()){
+            btConnection.mBTAdapter.cancelDiscovery();
+            Toast.makeText(context,"Discovery stopped",Toast.LENGTH_SHORT).show();
+        } else {
+            if(btConnection.mBTAdapter.isEnabled()) {
+                mBTArrayAdapter.clear(); // clear items
+                btConnection.mBTAdapter.startDiscovery();
+                Toast.makeText(context, "Discovery started", Toast.LENGTH_SHORT).show();
+                context.registerReceiver(btConnection.blReceiver, new IntentFilter(BluetoothDevice.ACTION_FOUND));
+            }
+            else{
+                Toast.makeText(context, "Bluetooth not on", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    @Override
+    public void onStop() {
+        unregisterReceiver(btConnection.blReceiver);
+        super.onStop();
+    }
 
 }

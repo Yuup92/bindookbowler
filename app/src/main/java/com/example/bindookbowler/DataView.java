@@ -9,6 +9,7 @@ import android.icu.util.Calendar;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -18,6 +19,10 @@ import android.widget.Toast;
 import com.jjoe64.graphview.GraphView;
 import com.jjoe64.graphview.series.DataPoint;
 import com.jjoe64.graphview.series.LineGraphSeries;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -126,34 +131,97 @@ public class DataView extends AppCompatActivity {
 
         mHandler = new Handler() {
 
+            // https://github.com/google/gson/blob/master/UserGuide.md#TOC-Object-Examples
             public void handleMessage(android.os.Message msg){
+                String t = "";
+                int dataIndex = 0;
+
+                String[] time = new String[25];
+
+                String[] accDx = new String[25];
+                String[] accDy = new String[25];
+                String[] accDz = new String[25];
+
+                String[] gyrDx = new String[25];
+                String[] gyrDy = new String[25];
+                String[] gyrDz = new String[25];
+
+                String[] accData = new String[3];
+                String[] gyrData = new String[3];
+
                 if(msg.what == BTConnection.MESSAGE_READ){
                     String readMessage = null;
                     try {
                         readMessage = new String((byte[]) msg.obj, "UTF-8");
+
+                        try {
+                            JSONObject data = new JSONObject(readMessage);
+                            JSONArray dataFields = data.getJSONArray("data");
+                            for (int i = 0; i < dataFields.length() - 1; i++) {
+                                if (dataFields.get(i) != null) {
+                                    JSONObject data2 = dataFields.getJSONObject(i);
+                                    Log.d("asshole", data2.toString());
+                                    t = data2.get("time").toString();
+                                    JSONObject accelJSON = (data2.getJSONObject("acceleration"));
+                                    JSONObject gryoJSON = (data2.getJSONObject("gyroscope"));
+
+                                    time[dataIndex] = t;
+                                    String ax = accelJSON.get("x").toString();
+                                    String ay = accelJSON.get("y").toString();
+                                    String az = accelJSON.get("z").toString();
+
+                                    String gx = gryoJSON.get("x").toString();
+                                    String gy = gryoJSON.get("y").toString();
+                                    String gz = gryoJSON.get("z").toString();
+
+                                    DataPointBT d = new DataPointBT(Integer.valueOf(t), Double.valueOf(ax),
+                                            Double.valueOf(ay), Double.valueOf(az),
+                                            Double.valueOf(gx), Double.valueOf(gy),
+                                            Double.valueOf(gz));
+                                    dataBuffer.put(d);
+
+                                    txtTime.setText(t);
+
+                                    txtAx.setText(ax);
+                                    txtAy.setText(ay);
+                                    txtAz.setText(az);
+
+                                    txtGx.setText(gx);
+                                    txtGy.setText(gy);
+                                    txtGz.setText(gz);
+                                }
+
+                            }
+
+
+
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+
                     } catch (UnsupportedEncodingException e) {
                         e.printStackTrace();
                     }
-                    parseString(readMessage);
                     if(recording) {
                         txtDebug.setText("recent time: " +  String.valueOf(dataBuffer.most_recent().time) +
                                         "finish recording time: " + String.valueOf(finishRecording));
                         if(dataBuffer.most_recent().time > finishRecording) {
 
                             int iDP = 0;
-                            DataPoint[] dataListAx = new DataPoint[recordedData];
-                            DataPoint[] dataListAy = new DataPoint[recordedData];
-                            DataPoint[] dataListAz = new DataPoint[recordedData];
+                            DataPoint[] dataListAx = new DataPoint[recordedData + 1000];
+                            DataPoint[] dataListAy = new DataPoint[recordedData + 1000];
+                            DataPoint[] dataListAz = new DataPoint[recordedData + 1000];
 
-                            DataPoint[] dataListGx = new DataPoint[recordedData];
-                            DataPoint[] dataListGy = new DataPoint[recordedData];
-                            DataPoint[] dataListGz = new DataPoint[recordedData];
+                            DataPoint[] dataListGx = new DataPoint[recordedData + 1000];
+                            DataPoint[] dataListGy = new DataPoint[recordedData + 1000];
+                            DataPoint[] dataListGz = new DataPoint[recordedData + 1000];
 
                             DataPointBT d = dataBuffer.take();
                             int intTime = d.time;
                             while(d != null) {
                                 int t2 = d.time-intTime;
                                 lastStored.put(d);
+                                Log.d("Cazzo!!!!", String.valueOf(iDP));
                                 dataListAx[iDP] = new DataPoint(t2, d.ax);
                                 dataListAy[iDP] = new DataPoint(t2, d.ay);
                                 dataListAz[iDP] = new DataPoint(t2, d.az);
@@ -275,76 +343,6 @@ public class DataView extends AppCompatActivity {
             }
         });
 
-    }
-
-    private String parseData(String msg, String type) {
-        int tIndex = msg.indexOf(type);
-        String tempAcc = msg.substring(tIndex + type.length(),  msg.length());
-        String[] temAcc = tempAcc.split("[;]");
-
-        String res = "";
-        res += temAcc[0].split("[=]")[1] + ";";
-        res += temAcc[1].split("[=]")[1] + ";";
-        res += temAcc[2].split("[=]")[1] + ";";
-        return res;
-    }
-
-    private void parseString(String msg) {
-        String t = "";
-        String acc = "";
-        String gyr = "";
-        String[] accData, gyrData;
-        accData = new String[3];
-        gyrData = new String[3];
-
-        String lines[] = msg.split("\\r?\\n");
-        int lengthLines = lines.length;
-
-        for(int i = 0; i < lengthLines; i++) {
-            if(lines[i].contains("Acceleration:")) {
-
-                try{
-                    t = lines[i-1];
-                    acc = parseData(lines[i], ACCEL);
-                    accData[0] = acc.split(";")[0];
-                    accData[1] = acc.split(";")[1];
-                    accData[2] = acc.split(";")[2];
-
-                    gyr = parseData(lines[i+1], GYRO);
-                    gyrData[0] = gyr.split(";")[0];
-                    gyrData[1] = gyr.split(";")[1];
-                    gyrData[2] = gyr.split(";")[2];
-                } catch (ArrayIndexOutOfBoundsException e) {
-                    break;
-                }
-
-
-                i++;
-                try {
-                    DataPointBT d = new DataPointBT(Integer.valueOf(t), Double.valueOf(accData[0]),
-                            Double.valueOf(accData[1]), Double.valueOf(accData[2]),
-                            Double.valueOf(gyrData[0]), Double.valueOf(gyrData[1]),
-                            Double.valueOf(gyrData[2]));
-                    dataBuffer.put(d);
-                    recordedData++;
-
-                } catch (NumberFormatException e) {
-                    t = "";
-                }
-            }
-        }
-
-        if(t.length() > 0){
-            txtTime.setText(t);
-
-            txtAx.setText(accData[0]);
-            txtAy.setText(accData[1]);
-            txtAz.setText(accData[2]);
-
-            txtGx.setText(gyrData[0]);
-            txtGy.setText(gyrData[1]);
-            txtGz.setText(gyrData[2]);
-        }
     }
 
     private boolean save() {

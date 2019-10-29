@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.SystemClock;
 import android.util.Log;
@@ -22,13 +23,15 @@ import java.lang.reflect.Method;
 import java.util.Set;
 import java.util.UUID;
 
-public class BTConnection {
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentActivity;
 
+public class BTConnection extends Fragment {
     private static BTConnection connectionObj;
 
-    private final String TAG = MainActivity.class.getSimpleName();
+    private final String TAG = "BluetoothConnection";
     private Handler mHandler;
-    private BluetoothAdapter mBTAdapter;
+    public BluetoothAdapter mBTAdapter;
     private Set<BluetoothDevice> mPairedDevice;
     private ArrayAdapter<String> mBTArrayAdapter;
 
@@ -43,7 +46,6 @@ public class BTConnection {
     private static final UUID BTMODULEUUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"); // "random" unique identifier
 
     public BTConnection(){
-
         mBTAdapter = (BluetoothAdapter) BluetoothAdapter.getDefaultAdapter();
     }
 
@@ -60,26 +62,6 @@ public class BTConnection {
 
     public void setmBTArrayAdapter(ArrayAdapter<String> adapter) {
         mBTArrayAdapter = adapter;
-    }
-
-    public void discover(View view){
-        // Check if the device is already discovering
-        Context context = view.getContext();
-
-        if(mBTAdapter.isDiscovering()){
-            mBTAdapter.cancelDiscovery();
-            Toast.makeText(context,"Discovery stopped",Toast.LENGTH_SHORT).show();
-        } else {
-            if(mBTAdapter.isEnabled()) {
-                mBTArrayAdapter.clear(); // clear items
-                mBTAdapter.startDiscovery();
-                Toast.makeText(context, "Discovery started", Toast.LENGTH_SHORT).show();
-                context.registerReceiver(blReceiver, new IntentFilter(BluetoothDevice.ACTION_FOUND));
-            }
-            else{
-                Toast.makeText(context, "Bluetooth not on", Toast.LENGTH_SHORT).show();
-            }
-        }
     }
 
     public void makeConnection(View v, Context context) {
@@ -111,6 +93,7 @@ public class BTConnection {
                 // Establish the Bluetooth socket connection.
                 try {
                     mBTSocket.connect();
+
                 } catch (IOException e) {
                     try {
                         fail = true;
@@ -147,7 +130,6 @@ public class BTConnection {
         }
     };
 
-
     private BluetoothSocket createBluetoothSocket(BluetoothDevice device) throws IOException {
         try {
             final Method m = device.getClass().getMethod("createInsecureRfcommSocketToServiceRecord", UUID.class);
@@ -180,7 +162,7 @@ public class BTConnection {
         }
 
         public void run() {
-            byte[] buffer = new byte[1024];  // buffer store for the stream
+            byte[] buffer = new byte[10240];  // buffer store for the stream
             int bytes; // bytes returned from read()
             // Keep listening to the InputStream until an exception occurs
             while (true) {
@@ -188,7 +170,7 @@ public class BTConnection {
                     // Read from the InputStream
                     bytes = mmInStream.available();
                     if(bytes != 0) {
-                        buffer = new byte[1024];
+                        buffer = new byte[10240];
                         SystemClock.sleep(100); //pause and wait for rest of data. Adjust this depending on your sending speed.
                         bytes = mmInStream.available(); // how many bytes are ready to be read?
                         bytes = mmInStream.read(buffer, 0, bytes); // record how many bytes we actually read

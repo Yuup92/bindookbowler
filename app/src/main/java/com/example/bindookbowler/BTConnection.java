@@ -162,17 +162,23 @@ public class BTConnection extends Fragment {
         }
 
         public void run() {
-            byte[] buffer = new byte[4000];  // buffer store for the stream
+            byte[] buffer = new byte[3200];  // buffer store for the stream
             int bytes; // bytes returned from read()
             // Keep listening to the InputStream until an exception occurs
             while (true) {
                 try {
                     // Read from the InputStream
                     bytes = mmInStream.available();
+                    while(bytes < 2500) {
+                        bytes = mmInStream.available();
+                        SystemClock.sleep(5);
+                    }
+
                     if(bytes != 0) {
-                        buffer = new byte[4000];
-                        SystemClock.sleep(100); //pause and wait for rest of data. Adjust this depending on your sending speed.
-                        bytes = mmInStream.available(); // how many bytes are ready to be read?
+                        buffer = new byte[3200];
+                         //pause and wait for rest of data. Adjust this depending on your sending speed.
+                        // bytes = mmInStream.available(); // how many bytes are ready to be read?
+                        Log.d("Byte counter", "Num of bytes available: " + bytes);
                         bytes = mmInStream.read(buffer, 0, bytes); // record how many bytes we actually read
                         mHandler.obtainMessage(MESSAGE_READ, bytes, -1, buffer)
                                 .sendToTarget(); // Send the obtained bytes to the UI activity

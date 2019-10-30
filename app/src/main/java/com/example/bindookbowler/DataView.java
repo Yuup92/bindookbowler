@@ -77,6 +77,11 @@ public class DataView extends AppCompatActivity {
     private String fN;
     private int fileIndex;
 
+    private static String DATATAG = "{ data: [";
+    private static String ENDTAG = "] }";
+    private static String TIMETAG = "{ time:";
+    private static String ENDTIMETAG = "}},";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -176,6 +181,10 @@ public class DataView extends AppCompatActivity {
 
         curTime = read_incoming_data(msg);
 
+        if(curTime == -1) {
+            return;
+        }
+
         if(recording) {
             if(curTime > finishRecording) {
                 saveRecording = true;
@@ -207,6 +216,98 @@ public class DataView extends AppCompatActivity {
             String readMessage = null;
             try {
                 readMessage = new String((byte[]) msg.obj, "UTF-8");
+                //Log.d("data", readMessage);
+
+                int start = readMessage.indexOf(DATATAG);
+                int end = readMessage.indexOf(ENDTIMETAG + ENDTAG);
+
+                //Log.d("test", "start: " + String.valueOf(start) + " end: " + String.valueOf(end) + " time: " + String.valueOf(firstIndexOfTime));
+
+                if(end < 0) {
+                    return -1;
+                } else if(start < end) {
+                    readMessage = readMessage.substring(start, end + 6);
+                    Log.d("Good DATA", "data was good");
+                } else {
+                    int timeStart = readMessage.indexOf(TIMETAG);
+                    int endOfDataPoint = readMessage.indexOf(ENDTIMETAG);
+
+                    // Missing data
+                    if(end < timeStart) {
+                        readMessage = readMessage.substring(end + 6);
+                        end = readMessage.indexOf(ENDTIMETAG + ENDTAG);
+                        start = readMessage.indexOf(DATATAG);
+                        if(start < end) {
+                            readMessage = readMessage.substring(start, end + 6);
+                            Log.d("Truncated DATA", "One data point went missing: ");
+                        } else {
+
+                            int finish = readMessage.lastIndexOf(ENDTIMETAG);
+                            readMessage = readMessage.substring(start, + finish + 3) + ENDTAG;
+                            Log.d("Truncated Data + ending missing", "Two data points went missing");
+
+                            // end data is missing
+                        }
+                    } else if(timeStart < end) {
+                        // Remove first bit of garabage data
+                        readMessage = readMessage.substring(timeStart);
+                        timeStart = readMessage.indexOf(TIMETAG);
+                        endOfDataPoint = readMessage.indexOf(ENDTIMETAG);
+
+                        start = readMessage.indexOf(DATATAG);
+                        end = readMessage.indexOf(ENDTIMETAG + ENDTAG);
+
+                        String data = "";
+                        while(end < start) {
+                            data += readMessage.substring(timeStart, endOfDataPoint + 3);
+                            readMessage = readMessage.substring(endOfDataPoint + 3);
+                            timeStart = readMessage.indexOf(TIMETAG);
+                            endOfDataPoint = readMessage.indexOf(ENDTIMETAG);
+
+                            end = readMessage.indexOf(ENDTAG);
+                            start = readMessage.indexOf(DATATAG);
+
+                            // All extra data points have been gathered
+                            if(end < timeStart) {
+                                readMessage = readMessage.substring(start);
+                                end = readMessage.indexOf(ENDTIMETAG + ENDTAG);
+                                start = readMessage.indexOf(DATATAG);
+                                if(start < end) {
+                                    String res = DATATAG + "\n\r" + data;
+                                    int s = readMessage.indexOf(DATATAG);
+                                    readMessage = res + readMessage.substring(s + 10);
+
+                                    start = readMessage.indexOf(DATATAG);
+                                    end = readMessage.indexOf(ENDTIMETAG + ENDTAG);
+
+                                    readMessage = readMessage.substring(start, end + 6);
+                                    Log.d("RESTORING DATA", "data restored");
+                                    break;
+                                } else {
+                                    String res = DATATAG  + "\n\r" + data;
+                                    timeStart = readMessage.indexOf(TIMETAG);
+                                    endOfDataPoint = readMessage.indexOf(ENDTIMETAG);
+
+                                    while(endOfDataPoint > 0) {
+                                        res += readMessage.substring(timeStart, endOfDataPoint + 3);
+                                        readMessage = readMessage.substring(endOfDataPoint + 3);
+                                        timeStart = readMessage.indexOf(TIMETAG);
+                                        endOfDataPoint = readMessage.indexOf(ENDTIMETAG);
+                                    }
+
+                                    res += ENDTAG;
+                                    readMessage = res;
+                                    end = 5;
+                                    start = 0;
+
+                                    Log.d("Broken JSON", "data restored, one data point missing");
+                                }
+                            }
+                        }
+
+                    }
+                }
+
 
 //                Gson gson = new Gson();
 //
@@ -257,9 +358,10 @@ public class DataView extends AppCompatActivity {
                     txtGx.setText(gx);
                     txtGy.setText(gy);
                     txtGz.setText(gz);
-
+                    Log.d("DATA", "data added");
                 } catch (JSONException e) {
-                    e.printStackTrace();
+                    Log.d("ERROR", "Packet dropped due to JSON error");
+                    //e.printStackTrace();
                 }
 
             } catch (UnsupportedEncodingException e) {

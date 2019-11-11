@@ -116,6 +116,9 @@ public class BlueToothManager extends AppCompatActivity {
             });
         }
 
+        Context context = getApplicationContext();
+        btConnection.makeConnection(context);
+
     }
 
     private void manangeContextSwitch() {
@@ -145,7 +148,7 @@ public class BlueToothManager extends AppCompatActivity {
     private AdapterView.OnItemClickListener mDeviceClickListener = new AdapterView.OnItemClickListener() {
         public void onItemClick(AdapterView<?> av, View v, int arg2, long arg3) {
             Context context = getBaseContext();
-            btConnection.makeConnection(v, context);
+            //btConnection.makeConnection(v, context);
         }
     };
 
@@ -168,11 +171,5 @@ public class BlueToothManager extends AppCompatActivity {
             }
         }
     }
-
-//    @Override
-//    public void onStop() {
-//        unregisterReceiver(btConnection.blReceiver);
-//        super.onStop();
-//    }
 
 }

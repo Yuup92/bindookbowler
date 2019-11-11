@@ -2,14 +2,17 @@ package com.example.bindookbowler;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.bluetooth.BluetoothDevice;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Color;
 import android.icu.util.Calendar;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.util.Log;
+import android.util.Pair;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -36,6 +39,7 @@ import java.lang.reflect.Type;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 public class DataView extends AppCompatActivity {
 
@@ -45,7 +49,7 @@ public class DataView extends AppCompatActivity {
     private static int MSG_CONSTANT = 3;
     private static String ACCEL = "Acceleration:";
     private static String GYRO = "Gyroscope:";
-    private static int RECORDLENGTH = 10000;
+    private static int RECORDLENGTH = 30000;
 
     private GraphView graphAcc, graphGyro;
 
@@ -77,10 +81,12 @@ public class DataView extends AppCompatActivity {
     private String fN;
     private int fileIndex;
 
-    private static String DATATAG = "{ data: [";
-    private static String ENDTAG = "] }";
-    private static String TIMETAG = "{ time:";
-    private static String ENDTIMETAG = "}},";
+    private static String STARTJSONTAG = "[";
+    private static String TIMETAG = "{time:";
+    private static String ENDTIMETAG = "},";
+    private static String ENDDATATAG = "}]";
+
+    private ArrayList<DataPointBT> dataPointList;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -113,6 +119,8 @@ public class DataView extends AppCompatActivity {
         btnMenu = (Button) findViewById(R.id.btnMenu);
         btnBT = (Button) findViewById(R.id.btnBT);
         btnDataDir = (Button) findViewById(R.id.btnDataDir);
+
+        dataPointList = new ArrayList<DataPointBT>();
 
         initialize_buttons();
         curTime = 0;
@@ -160,11 +168,10 @@ public class DataView extends AppCompatActivity {
         }));
 
         // Should result in 10-15[s] of buffer
-        dataBuffer = new DataBuffer(15000);
-        lastStored = new DataBuffer(15000);
+        dataBuffer = new DataBuffer(30000);
+        lastStored = new DataBuffer(30000);
 
         mHandler = new Handler() {
-
             // https://github.com/google/gson/blob/master/UserGuide.md#TOC-Object-Examples
             public void handleMessage(android.os.Message msg){
                 handle_message(msg);
@@ -174,6 +181,30 @@ public class DataView extends AppCompatActivity {
         btConnection = BTConnection.getInstance();
         btConnection.setHandler(mHandler);
 
+        Context context = getApplicationContext();
+        btConnection.makeConnection(context);
+    }
+
+
+    // modify this function
+    public void discover(View view){
+        // Check if the device is already discovering
+        Context context = view.getContext();
+
+        if(btConnection.mBTAdapter.isDiscovering()){
+            btConnection.mBTAdapter.cancelDiscovery();
+            Toast.makeText(context,"Discovery stopped",Toast.LENGTH_SHORT).show();
+        } else {
+            if(btConnection.mBTAdapter.isEnabled()) {
+                //mBTArrayAdapter.clear(); // clear items
+                btConnection.mBTAdapter.startDiscovery();
+                Toast.makeText(context, "Discovery started", Toast.LENGTH_SHORT).show();
+                context.registerReceiver(btConnection.blReceiver, new IntentFilter(BluetoothDevice.ACTION_FOUND));
+            }
+            else{
+                Toast.makeText(context, "Bluetooth not on", Toast.LENGTH_SHORT).show();
+            }
+        }
     }
 
     private void handle_message(android.os.Message msg) {
@@ -212,131 +243,54 @@ public class DataView extends AppCompatActivity {
         String gy = "";
         String gz = "";
 
+
+
         if(msg.what == BTConnection.MESSAGE_READ) {
             String readMessage = null;
-            try {
-                readMessage = new String((byte[]) msg.obj, "UTF-8");
-                //Log.d("data", readMessage);
+//            try {
 
-                int start = readMessage.indexOf(DATATAG);
-                int end = readMessage.indexOf(ENDTIMETAG + ENDTAG);
+                readMessage = new String((byte[]) msg.obj);
 
-                //Log.d("test", "start: " + String.valueOf(start) + " end: " + String.valueOf(end) + " time: " + String.valueOf(firstIndexOfTime));
+                //Log.d("INCOMING DATA", readMessage);
 
-                if(end < 0) {
-                    return -1;
-                } else if(start < end) {
-                    readMessage = readMessage.substring(start, end + 6);
-                    Log.d("Good DATA", "data was good");
-                } else {
-                    int timeStart = readMessage.indexOf(TIMETAG);
-                    int endOfDataPoint = readMessage.indexOf(ENDTIMETAG);
-
-                    // Missing data
-                    if(end < timeStart) {
-                        readMessage = readMessage.substring(end + 6);
-                        end = readMessage.indexOf(ENDTIMETAG + ENDTAG);
-                        start = readMessage.indexOf(DATATAG);
-                        if(start < end) {
-                            readMessage = readMessage.substring(start, end + 6);
-                            Log.d("Truncated DATA", "One data point went missing: ");
-                        } else {
-
-                            int finish = readMessage.lastIndexOf(ENDTIMETAG);
-                            readMessage = readMessage.substring(start, + finish + 3) + ENDTAG;
-                            Log.d("Truncated Data + ending missing", "Two data points went missing");
-
-                            // end data is missing
-                        }
-                    } else if(timeStart < end) {
-                        // Remove first bit of garabage data
-                        readMessage = readMessage.substring(timeStart);
-                        timeStart = readMessage.indexOf(TIMETAG);
-                        endOfDataPoint = readMessage.indexOf(ENDTIMETAG);
-
-                        start = readMessage.indexOf(DATATAG);
-                        end = readMessage.indexOf(ENDTIMETAG + ENDTAG);
-
-                        String data = "";
-                        while(end < start) {
-                            data += readMessage.substring(timeStart, endOfDataPoint + 3);
-                            readMessage = readMessage.substring(endOfDataPoint + 3);
-                            timeStart = readMessage.indexOf(TIMETAG);
-                            endOfDataPoint = readMessage.indexOf(ENDTIMETAG);
-
-                            end = readMessage.indexOf(ENDTAG);
-                            start = readMessage.indexOf(DATATAG);
-
-                            // All extra data points have been gathered
-                            if(end < timeStart) {
-                                readMessage = readMessage.substring(start);
-                                end = readMessage.indexOf(ENDTIMETAG + ENDTAG);
-                                start = readMessage.indexOf(DATATAG);
-                                if(start < end) {
-                                    String res = DATATAG + "\n\r" + data;
-                                    int s = readMessage.indexOf(DATATAG);
-                                    readMessage = res + readMessage.substring(s + 10);
-
-                                    start = readMessage.indexOf(DATATAG);
-                                    end = readMessage.indexOf(ENDTIMETAG + ENDTAG);
-
-                                    readMessage = readMessage.substring(start, end + 6);
-                                    Log.d("RESTORING DATA", "data restored");
-                                    break;
-                                } else {
-                                    String res = DATATAG  + "\n\r" + data;
-                                    timeStart = readMessage.indexOf(TIMETAG);
-                                    endOfDataPoint = readMessage.indexOf(ENDTIMETAG);
-
-                                    while(endOfDataPoint > 0) {
-                                        res += readMessage.substring(timeStart, endOfDataPoint + 3);
-                                        readMessage = readMessage.substring(endOfDataPoint + 3);
-                                        timeStart = readMessage.indexOf(TIMETAG);
-                                        endOfDataPoint = readMessage.indexOf(ENDTIMETAG);
-                                    }
-
-                                    res += ENDTAG;
-                                    readMessage = res;
-                                    end = 5;
-                                    start = 0;
-
-                                    Log.d("Broken JSON", "data restored, one data point missing");
-                                }
-                            }
-                        }
-
+                ArrayList<String> jsonList = new ArrayList<String>();
+                Boolean notFinished = true;
+                while(notFinished) {
+                    int startJSON =  readMessage.indexOf(TIMETAG);
+                    int endJSON = readMessage.indexOf(ENDTIMETAG);
+                    if(startJSON < endJSON) {
+                        jsonList.add(readMessage.substring(startJSON, endJSON+1));
+                        readMessage = readMessage.substring(endJSON + 1);
+                    } else if(endJSON < 1) {
+                        notFinished = false;
+                    } else {
+                        readMessage = readMessage.substring(endJSON + 1);
                     }
                 }
 
 
-//                Gson gson = new Gson();
-//
-//                Type dataListType = new TypeToken<ArrayList<DataPointJSON>>(){}.getType();
-//
-//                ArrayList<DataPointJSON> dataPoints = gson.fromJson(readMessage, dataListType);
-//
-//                for(DataPointJSON dataP : dataPoints){
-//                    Log.d("Trying gson", dataP.toString());
-//                }
+                String res = STARTJSONTAG;
+                for(int i = 0; i < jsonList.size(); i++) {
+                    res += jsonList.get(i) + ',';
+                }
+                res += "]";
+                Log.d("DATA", res);
 
                 try {
-                    JSONObject data = new JSONObject(readMessage);
-                    JSONArray dataFields = data.getJSONArray("data");
-
-                    for (int i = 0; i < dataFields.length() - 1; i++) {
-                        if (dataFields.get(i) != null) {
-                            JSONObject data2 = dataFields.getJSONObject(i);
+                    JSONArray data = new JSONArray(res);
+                    //Log.d("Test", String.valueOf(data.length()) );
+                    for (int i = 0; i < data.length() - 1; i++) {
+                        if (data.get(i) != null) {
+                            JSONObject data2 = data.getJSONObject(i);
                             t = data2.get("time").toString();
-                            JSONObject accelJSON = (data2.getJSONObject("acceleration"));
-                            JSONObject gryoJSON = (data2.getJSONObject("gyroscope"));
 
-                            ax = accelJSON.get("x").toString();
-                            ay = accelJSON.get("y").toString();
-                            az = accelJSON.get("z").toString();
+                            ax = data2.get("ax").toString();
+                            ay = data2.get("ay").toString();
+                            az = data2.get("az").toString();
 
-                            gx = gryoJSON.get("x").toString();
-                            gy = gryoJSON.get("y").toString();
-                            gz = gryoJSON.get("z").toString();
+                            gx = data2.get("gx").toString();
+                            gy = data2.get("gy").toString();
+                            gz = data2.get("gz").toString();
 
                             if(recording) {
                                 recordedData++;
@@ -345,10 +299,12 @@ public class DataView extends AppCompatActivity {
                                         Double.valueOf(ay), Double.valueOf(az),
                                         Double.valueOf(gx), Double.valueOf(gy),
                                         Double.valueOf(gz));
+                                dataPointList.add(d);
                                 dataBuffer.put(d);
                             }
                         }
                     }
+
                     txtTime.setText(t);
 
                     txtAx.setText(ax);
@@ -358,15 +314,18 @@ public class DataView extends AppCompatActivity {
                     txtGx.setText(gx);
                     txtGy.setText(gy);
                     txtGz.setText(gz);
-                    Log.d("DATA", "data added");
+
                 } catch (JSONException e) {
                     Log.d("ERROR", "Packet dropped due to JSON error");
                     //e.printStackTrace();
                 }
 
-            } catch (UnsupportedEncodingException e) {
-                e.printStackTrace();
-            }
+//            } catch (UnsupportedEncodingException e) {
+//                e.printStackTrace();
+//                Log.d("JSON CHECK", "check check check");
+//
+//
+//            }
         }
 
         if(t != "" && Integer.valueOf(t) > curTime) {
@@ -387,26 +346,25 @@ public class DataView extends AppCompatActivity {
         dataListGy = new DataPoint[recordedData];
         dataListGz = new DataPoint[recordedData];
 
-        DataPointBT d = dataBuffer.take();
-        int intTime = d.time;
-        while(d != null) {
+        int intTime = dataPointList.get(0).time;
+        for(int i = 0; i < dataPointList.size(); i++) {
+            DataPointBT d = dataPointList.get(i);
             int t2 = d.time-intTime;
-            lastStored.put(d);
             dataListAx[iDP] = new DataPoint(t2, d.ax);
             dataListAy[iDP] = new DataPoint(t2, d.ay);
             dataListAz[iDP] = new DataPoint(t2, d.az);
             dataListGx[iDP] = new DataPoint(t2, d.gx);
             dataListGy[iDP] = new DataPoint(t2, d.gy);
             dataListGz[iDP] = new DataPoint(t2, d.gz);
-
-            d = dataBuffer.take();
             iDP++;
         }
+
         recording = false;
         saveRecording = false;
 
         if(save()) {
             Toast toast = Toast.makeText(getBaseContext(), "Recording Finished, Save Successful", Toast.LENGTH_LONG);
+            Log.d("SAVE SAVE", "Saving worked");
             toast.show();
         } else {
             Toast toast = Toast.makeText(getBaseContext(), "Recording Finished, Save Failed!!", Toast.LENGTH_LONG);
@@ -414,6 +372,7 @@ public class DataView extends AppCompatActivity {
         }
 
         lastStored.reset();
+        dataPointList.clear();
         return iDP;
     }
 
@@ -518,32 +477,23 @@ public class DataView extends AppCompatActivity {
             fileName.setText(fN);
         }
 
-        String fileName = fN + "_" + String.valueOf(fileIndex) + ".csv";
+        String fileName = fN +  ".csv";
         File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
         File file = new File(dir, fileName);
 
         try(FileWriter fileWriter = new FileWriter(file )) {
             fileWriter.append(header);
-            DataPointBT d = lastStored.take();
-            while(d != null) {
-                fileWriter.append(d.toFile());
-                counter++;
-                d = lastStored.take();
-                if(counter % 5 == 0 && d != null){
-                    txtDebug.setText(d.toFile());
-                }
+            for(int i = 0; i < dataPointList.size(); i++) {
+                fileWriter.append(dataPointList.get(i).toFile());
+                fileIndex++;
             }
-            fileIndex++;
+
         } catch (IOException e) {
             e.printStackTrace();
             return false;
         }
 
-        if(counter < 5) {
-            return false;
-        } else {
-            return true;
-        }
+        return true;
     }
 
 }

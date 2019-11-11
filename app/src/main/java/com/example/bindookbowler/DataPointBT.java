@@ -32,5 +32,59 @@ public class DataPointBT {
     }
 
 
+    public int getTime() {
+        return time;
+    }
 
+    public void setTime(int time) {
+        this.time = time;
+    }
+
+    public double getAx() {
+        return ax;
+    }
+
+    public void setAx(double ax) {
+        this.ax = ax;
+    }
+
+    public double getAy() {
+        return ay;
+    }
+
+    public void setAy(double ay) {
+        this.ay = ay;
+    }
+
+    public double getAz() {
+        return az;
+    }
+
+    public void setAz(double az) {
+        this.az = az;
+    }
+
+    public double getGx() {
+        return gx;
+    }
+
+    public void setGx(double gx) {
+        this.gx = gx;
+    }
+
+    public double getGy() {
+        return gy;
+    }
+
+    public void setGy(double gy) {
+        this.gy = gy;
+    }
+
+    public double getGz() {
+        return gz;
+    }
+
+    public void setGz(double gz) {
+        this.gz = gz;
+    }
 }

@@ -49,6 +49,9 @@ public class BTConnection extends Fragment {
         mBTAdapter = (BluetoothAdapter) BluetoothAdapter.getDefaultAdapter();
     }
 
+    private String btHardwareAdress =  "3C:71:BF:6A:E1:6E";
+    private String btHardwareName = "VP_Voor_President";
+
     public static BTConnection getInstance() {
         if(connectionObj == null) {
             connectionObj = new BTConnection();
@@ -64,56 +67,24 @@ public class BTConnection extends Fragment {
         mBTArrayAdapter = adapter;
     }
 
-    public void makeConnection(View v, Context context) {
+
+
+    public void makeConnection(Context context) {
         if(!mBTAdapter.isEnabled()) {
             Toast.makeText(context, "Bluetooth not on", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // textStatus.setText("Connecting...");
-        // Get the device MAC address, which is the last 17 chars in the View
-        String info = ((TextView) v).getText().toString();
-        final String address = info.substring(info.length() - 17);
-        final String name = info.substring(0,info.length() - 17);
+        if(mBTAdapter.isEnabled()) {
+            mBTAdapter.startDiscovery();
+            Toast.makeText(context, "Discovery started", Toast.LENGTH_SHORT).show();
+            IntentFilter filter = new IntentFilter();
+            filter.addAction(BluetoothDevice.ACTION_FOUND);
+            filter.addAction(BluetoothDevice.ACTION_ACL_CONNECTED);
+            filter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
+            context.registerReceiver(blReceiverDataRecord, new IntentFilter(filter));
+        }
 
-        // Spawn a new thread to avoid blocking the GUI one
-        new Thread()
-        {
-            public void run() {
-                boolean fail = false;
-
-                BluetoothDevice device = mBTAdapter.getRemoteDevice(address);
-
-                try {
-                    mBTSocket = createBluetoothSocket(device);
-                } catch (IOException e) {
-                    fail = true;
-                    // Toast.makeText(context, "Socket creation failed", Toast.LENGTH_SHORT).show();
-                }
-                // Establish the Bluetooth socket connection.
-                try {
-                    mBTSocket.connect();
-
-                } catch (IOException e) {
-                    try {
-                        fail = true;
-                        mBTSocket.close();
-                        mHandler.obtainMessage(CONNECTING_STATUS, -1, -1)
-                                .sendToTarget();
-                    } catch (IOException e2) {
-                        //insert code to deal with this
-                       //  Toast.makeText(getBaseContext(), "Socket creation failed", Toast.LENGTH_SHORT).show();
-                    }
-                }
-                if(fail == false) {
-                    mConnectedThread = new ConnectedThread(mBTSocket);
-                    mConnectedThread.start();
-
-                    mHandler.obtainMessage(CONNECTING_STATUS, 1, -1, name)
-                            .sendToTarget();
-                }
-            }
-        }.start();
     }
 
     final BroadcastReceiver blReceiver = new BroadcastReceiver() {
@@ -126,6 +97,112 @@ public class BTConnection extends Fragment {
                 // add the name to the list
                 mBTArrayAdapter.add(device.getName() + "\n" + device.getAddress());
                 mBTArrayAdapter.notifyDataSetChanged();
+            }
+        }
+    };
+
+    final BroadcastReceiver blReceiverDataRecord = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+
+            Log.d("Bluetooth broadcast receiver", action);
+
+            if (BluetoothDevice.ACTION_FOUND.equals(action)) {
+
+
+                try {
+                    if( device.getName().equals(btHardwareName)) {
+                        Toast.makeText(context, "BlueTooth Found: " + device.getName(), Toast.LENGTH_LONG).show();
+                        // Spawn a new thread to avoid blocking the GUI one
+
+                        new Thread()
+                        {
+                            public void run() {
+                                boolean fail = false;
+
+                                BluetoothDevice device = mBTAdapter.getRemoteDevice(btHardwareAdress);
+
+                                try {
+                                    mBTSocket = createBluetoothSocket(device);
+                                } catch (IOException e) {
+                                    fail = true;
+                                    // Toast.makeText(context, "Socket creation failed", Toast.LENGTH_SHORT).show();
+                                }
+                                // Establish the Bluetooth socket connection.
+                                try {
+                                    mBTSocket.connect();
+
+                                } catch (IOException e) {
+                                    try {
+                                        fail = true;
+                                        mBTSocket.close();
+                                        mHandler.obtainMessage(CONNECTING_STATUS, -1, -1)
+                                                .sendToTarget();
+                                    } catch (IOException e2) {
+                                        //insert code to deal with this
+                                        //  Toast.makeText(getBaseContext(), "Socket creation failed", Toast.LENGTH_SHORT).show();
+                                    }
+                                }
+                                if(fail == false) {
+                                    mConnectedThread = new ConnectedThread(mBTSocket);
+                                    mConnectedThread.start();
+
+                                    mHandler.obtainMessage(CONNECTING_STATUS, 1, -1, btHardwareName)
+                                            .sendToTarget();
+                                }
+                            }
+                        }.start();
+                    }
+                } catch(NullPointerException e) {
+
+                }
+
+            } else if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
+                 //Device is now connected
+            } else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
+                mBTAdapter.startDiscovery();
+                if(device.getName() == btHardwareName) {
+                    Toast.makeText(context, "BlueTooth discounted trying to reconnect: " + device.getName(), Toast.LENGTH_LONG).show();
+                    new Thread() {
+                        public void run() {
+                            boolean fail = false;
+
+                            BluetoothDevice device = mBTAdapter.getRemoteDevice(btHardwareAdress);
+
+                            try {
+                                mBTSocket = createBluetoothSocket(device);
+                            } catch (IOException e) {
+                                fail = true;
+                                // Toast.makeText(context, "Socket creation failed", Toast.LENGTH_SHORT).show();
+                            }
+                            // Establish the Bluetooth socket connection.
+                            try {
+                                mBTSocket.connect();
+
+                            } catch (IOException e) {
+                                try {
+                                    fail = true;
+                                    mBTSocket.close();
+                                    mHandler.obtainMessage(CONNECTING_STATUS, -1, -1)
+                                            .sendToTarget();
+                                } catch (IOException e2) {
+                                    //insert code to deal with this
+                                    //  Toast.makeText(getBaseContext(), "Socket creation failed", Toast.LENGTH_SHORT).show();
+                                }
+                            }
+                            if (fail == false) {
+                                mConnectedThread = new ConnectedThread(mBTSocket);
+                                mConnectedThread.start();
+
+                                mHandler.obtainMessage(CONNECTING_STATUS, 1, -1, btHardwareName)
+                                        .sendToTarget();
+                            }
+                        }
+                    }.start();
+                }
+                 //Device has disconnected
             }
         }
     };
@@ -169,23 +246,28 @@ public class BTConnection extends Fragment {
                 try {
                     // Read from the InputStream
                     bytes = mmInStream.available();
-                    while(bytes < 2500) {
+                    while(bytes < 1) {
                         bytes = mmInStream.available();
-                        SystemClock.sleep(5);
                     }
+                    SystemClock.sleep(100);
+//                    while(bytes < 20) {
+//                        bytes = mmInStream.available();
+//
+//                    }
 
                     if(bytes != 0) {
-                        buffer = new byte[3200];
+                        buffer = new byte[5000];
                          //pause and wait for rest of data. Adjust this depending on your sending speed.
                         // bytes = mmInStream.available(); // how many bytes are ready to be read?
-                        Log.d("Byte counter", "Num of bytes available: " + bytes);
+                        // Log.d("Byte counter", "Num of bytes available: " + bytes);
                         bytes = mmInStream.read(buffer, 0, bytes); // record how many bytes we actually read
                         mHandler.obtainMessage(MESSAGE_READ, bytes, -1, buffer)
                                 .sendToTarget(); // Send the obtained bytes to the UI activity
                     }
                 } catch (IOException e) {
                     e.printStackTrace();
-
+                } catch(ArrayIndexOutOfBoundsException e){
+                    e.printStackTrace();
                 }
             }
         }

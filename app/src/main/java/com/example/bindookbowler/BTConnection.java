@@ -49,7 +49,7 @@ public class BTConnection extends Fragment {
         mBTAdapter = (BluetoothAdapter) BluetoothAdapter.getDefaultAdapter();
     }
 
-    private String btHardwareAdress =  "3C:71:BF:6A:E1:6E";
+    private String btHardwareAdress =  "A4:CF:12:25:CE:E2";
     private String btHardwareName = "VP_Voor_President";
 
     public static BTConnection getInstance() {
@@ -254,6 +254,8 @@ public class BTConnection extends Fragment {
 //                        bytes = mmInStream.available();
 //
 //                    }
+
+                    Log.d("BLT", "Am receving data");
 
                     if(bytes != 0) {
                         buffer = new byte[5000];
